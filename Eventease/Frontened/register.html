@@ -1,0 +1,35 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>Register | EventEase</title>
+  <link rel="stylesheet" href="css/style.css">
+</head>
+<body>
+<header id="navbar"></header>
+<main>
+  <section class="container narrow">
+    <form class="form-card" id="registerForm" novalidate>
+      <h2>Create Account</h2>
+      <label>Full Name<input id="name" required></label>
+      <label>Email<input type="email" id="email" required></label>
+      <label>Password<input type="password" id="password" required></label>
+      <label>Confirm Password<input type="password" id="confirm" required></label>
+      <label>Role
+        <select id="role">
+          <option value="attendee">Attendee</option>
+          <option value="organizer">Organizer</option>
+        </select>
+      </label>
+      <p class="error" id="formError"></p>
+      <button class="btn" type="submit">Register</button>
+      <p>Have an account? <a href="login.html">Login</a></p>
+    </form>
+  </section>
+</main>
+<footer id="footer"></footer>
+<script src="js/main.js"></script>
+<script src="js/auth.js"></script>
+</body>
+</html>

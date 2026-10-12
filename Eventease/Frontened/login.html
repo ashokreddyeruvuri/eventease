@@ -1,0 +1,28 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>Login | EventEase</title>
+  <link rel="stylesheet" href="css/style.css">
+</head>
+<body>
+<header id="navbar"></header>
+<main>
+  <section class="container narrow">
+    <form class="form-card" id="loginForm" novalidate>
+      <h2>Welcome Back</h2>
+      <label>Email<input type="email" id="email" required></label>
+      <label>Password<input type="password" id="password" required></label>
+      <p class="error" id="formError"></p>
+      <button class="btn" type="submit">Login</button>
+      <p><a href="#" id="forgot">Forgot password?</a></p>
+      <p>No account? <a href="register.html">Register here</a></p>
+    </form>
+  </section>
+</main>
+<footer id="footer"></footer>
+<script src="js/main.js"></script>
+<script src="js/auth.js"></script>
+</body>
+</html>

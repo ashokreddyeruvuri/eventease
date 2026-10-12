@@ -1,0 +1,44 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>Create Event | EventEase</title>
+  <link rel="stylesheet" href="css/style.css">
+</head>
+<body>
+<header id="navbar"></header>
+<main>
+  <section class="container narrow">
+    <form class="form-card" id="eventForm" novalidate>
+      <h2 id="formTitle">Create Event</h2>
+      <label>Event Name<input id="name" required></label>
+      <label>Description<textarea id="desc" rows="4" required></textarea></label>
+      <label>Category<select id="category"></select></label>
+
+      <label>Event Dates (add one row per day)</label>
+      <div id="datesBox"></div>
+      <div class="row">
+        <button type="button" class="btn btn-sm btn-light" id="addDate">+ Add Another Date</button>
+        <label>Or auto-fill number of days
+          <input type="number" id="quickDays" min="1" max="30" placeholder="e.g. 3 (or 7 for a week)">
+        </label>
+      </div>
+
+      <label>Location<input id="location" required></label>
+      <label>Event URL<input id="url" type="url" placeholder="https://example.com/event" required></label>
+      <div class="row">
+        <label>Maximum Capacity<input type="number" id="capacity" min="1" required></label>
+        <label>Ticket Price (0 = free)<input type="number" id="price" min="0" required></label>
+      </div>
+      <label>Event Image<input type="file" id="image" accept="image/*"></label>
+      <p class="error" id="formError"></p>
+      <button class="btn" type="submit">Submit</button>
+    </form>
+  </section>
+</main>
+<footer id="footer"></footer>
+<script src="js/main.js"></script>
+<script src="js/dashboard.js"></script>
+</body>
+</html>

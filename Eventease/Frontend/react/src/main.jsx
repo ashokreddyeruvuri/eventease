@@ -1,8 +1,8 @@
 import React, { useEffect, useState } from 'react';
 import { createRoot } from 'react-dom/client';
 import {
-  categories, dateLabel, ensureSeeded, getEvents, getRegistrations, getSession, getUsers,
-  priceLabel, readDb, writeDb
+  categories, createEvent, dateLabel, ensureSeeded, getEvents, getRegistrations, getSession, getUsers,
+  login, logout, priceLabel, registerForEvent, registerUser
 } from './data';
 import './style.css';
 
@@ -15,12 +15,16 @@ function Layout({ children }) {
   const user = getSession();
   return <><header><nav className="navbar"><div className="nav-inner"><a className="logo" href="/" onClick={e => { e.preventDefault(); go('/'); }}>Event<span>Ease</span></a><ul className="nav-links">
     <li><a href="/" onClick={e => { e.preventDefault(); go('/'); }}>Home</a></li><li><a href="/events" onClick={e => { e.preventDefault(); go('/events'); }}>Events</a></li><li><a href="/#categories">About</a></li><li><a href="mailto:support@eventease.com">Contact</a></li>
-    {user ? <><li><a href={`/dashboard/${user.role}`} onClick={e => { e.preventDefault(); go(`/dashboard/${user.role}`); }}>Dashboard</a></li><li><a href="/" onClick={e => { e.preventDefault(); localStorage.removeItem('ee_session'); go('/'); }}>Logout</a></li></> : <><li><a href="/login" onClick={e => { e.preventDefault(); go('/login'); }}>Login</a></li><li><a href="/register" onClick={e => { e.preventDefault(); go('/register'); }}>Register</a></li></>}
+    {user ? <><li><a href={`/dashboard/${user.role}`} onClick={e => { e.preventDefault(); go(`/dashboard/${user.role}`); }}>Dashboard</a></li><li><a href="/" onClick={async e => { e.preventDefault(); await logout(); go('/'); }}>Logout</a></li></> : <><li><a href="/login" onClick={e => { e.preventDefault(); go('/login'); }}>Login</a></li><li><a href="/register" onClick={e => { e.preventDefault(); go('/register'); }}>Register</a></li></>}
   </ul></div></nav></header><main>{children}</main><footer><p>© 2026 EventEase · Discover. Register. Experience.</p><p className="small">Developed by Eruvuri Ashok Reddy</p><p className="small">support@eventease.com</p></footer></>;
 }
 
 function EventCard({ event }) {
   return <article className="card"><div className={`card-img cat-${event.category}`}>{categories[event.category]}</div><div className="card-body"><span className="tag">{event.category}</span><h3>{event.name}</h3><p>{event.desc}</p><p className="muted">📅 {dateLabel(event)} · 📍 {event.location}</p><div className="card-foot"><strong>{priceLabel(event.price)}</strong><a className="btn btn-sm" href={`/events/${event.id}`} onClick={e => { e.preventDefault(); go(`/events/${event.id}`); }}>View details</a></div></div></article>;
+}
+
+function RegistrationCard({ registration, event }) {
+  return <article className="panel registration-details"><div className="section-head"><div><span className="tag">{registration.status || 'Confirmed'}</span><h3>{event.name}</h3></div><strong>{priceLabel(event.price)}</strong></div><p>{event.desc}</p><div className="row"><p><strong>Category:</strong> {event.category}</p><p><strong>Organizer:</strong> {event.organizer}</p></div><div className="row"><p>📅 <strong>{dateLabel(event)}</strong></p><p>🕘 <strong>{event.time}</strong></p></div><p>📍 <strong>{event.location}</strong></p><div className="row"><p><strong>Ticket:</strong> {registration.ticket}</p><p><strong>Registered on:</strong> {registration.date}</p></div><p><strong>Available seats:</strong> {event.seats} of {event.capacity}</p><button className="btn btn-sm" onClick={() => go(`/events/${event.id}`)}>Open full event details</button></article>;
 }
 
 function Home() {
@@ -39,23 +43,25 @@ function Events() {
 function Details({ id }) {
   const event = getEvents().find(item => item.id === Number(id));
   const [message, setMessage] = useState('');
+  const [registration, setRegistration] = useState(null);
   if (!event) return <section className="container"><h2>Event not found</h2></section>;
-  const register = () => {
+  const register = async () => {
     const user = getSession();
     if (!user) { sessionStorage.setItem('ee_after_login', `/events/${id}`); go('/login'); return; }
-    if (event.seats <= 0) return setMessage('This event is sold out.');
-    const regs = getRegistrations();
-    if (regs.some(reg => reg.userId === user.id && reg.eventId === event.id)) return setMessage('You are already registered.');
-    writeDb('registrations', [...regs, { id: Date.now(), userId: user.id, eventId: event.id, ticket: `EE-${Date.now().toString().slice(-6)}` }]);
-    writeDb('events', getEvents().map(item => item.id === event.id ? { ...item, seats: item.seats - 1 } : item));
-    setMessage('Registration confirmed!');
+    try {
+      const result = await registerForEvent(event.id);
+      setRegistration(result);
+      setMessage('Registration confirmed!');
+    } catch (error) {
+      setMessage(error.message);
+    }
   };
-  return <section className="container details"><p className="eyebrow small">{event.category} · {eventStatus(event)}</p><h1>{event.name}</h1><p>{event.desc}</p><div className="panel"><p>📅 <strong>{dateLabel(event)}</strong></p><p>📍 {event.location}</p><p>🎟️ {event.seats} seats remaining · {priceLabel(event.price)}</p><button className="btn" onClick={register}>Register now</button>{message && <p className="success">{message}</p>}</div></section>;
+  return <section className="container details"><p className="eyebrow small">{event.category} · {eventStatus(event)}</p><h1>{event.name}</h1><p>{event.desc}</p><div className="panel"><p>📅 <strong>{dateLabel(event)}</strong></p><p>📍 {event.location}</p><p>🎟️ {event.seats} seats remaining · {priceLabel(event.price)}</p><button className="btn" onClick={register}>Register now</button>{message && <div className="success"><p>{message}</p>{registration && <><p><strong>Ticket:</strong> {registration.ticket}</p><button className="btn btn-sm" onClick={() => go(`/events/${event.id}`)}>View registered event details</button><button className="btn btn-sm btn-light" onClick={() => go('/dashboard/attendee')}>View my registration</button></>}</div>}</div></section>;
 }
 
 function Auth({ register = false }) {
   const [error, setError] = useState('');
-  const submit = e => { e.preventDefault(); const form = new FormData(e.currentTarget); const email = String(form.get('email')).trim().toLowerCase(); if (!emailOk(email)) return setError('Enter a valid email address.'); if (register) { const name = String(form.get('name')).trim(); const password = String(form.get('password')); if (name.length < 3) return setError('Name must be at least 3 characters.'); if (password.length < 6) return setError('Password must be at least 6 characters.'); if (password !== form.get('confirm')) return setError('Passwords do not match.'); const users = getUsers(); if (users.some(user => user.email === email)) return setError('Email is already registered.'); writeDb('users', [...users, { id: Date.now(), name, email, password, role: form.get('role') }]); go('/login'); } else { const user = getUsers().find(item => item.email === email && item.password === form.get('password')); if (!user) return setError('Incorrect email or password.'); writeDb('session', { id: user.id, name: user.name, email: user.email, role: user.role }); const target = sessionStorage.getItem('ee_after_login'); sessionStorage.removeItem('ee_after_login'); go(target || `/dashboard/${user.role}`); } };
+  const submit = async e => { e.preventDefault(); const form = new FormData(e.currentTarget); const email = String(form.get('email')).trim().toLowerCase(); if (!emailOk(email)) return setError('Enter a valid email address.'); try { if (register) { const name = String(form.get('name')).trim(); const password = String(form.get('password')); if (name.length < 3) return setError('Name must be at least 3 characters.'); if (password.length < 6) return setError('Password must be at least 6 characters.'); if (password !== form.get('confirm')) return setError('Passwords do not match.'); await registerUser({ name, email, password, role: form.get('role') }); go('/login'); } else { const user = await login(email, String(form.get('password'))); const target = sessionStorage.getItem('ee_after_login'); sessionStorage.removeItem('ee_after_login'); go(target || `/dashboard/${user.role}`); } } catch (error) { setError(error.message); } };
   return <section className="container narrow"><form className="form-card" onSubmit={submit}><h2>{register ? 'Create Account' : 'Welcome Back'}</h2>{register && <label>Full Name<input name="name" required /></label>}<label>Email<input name="email" type="email" required /></label><label>Password<input name="password" type="password" required /></label>{register && <><label>Confirm Password<input name="confirm" type="password" required /></label><label>Role<select name="role"><option value="attendee">Attendee</option><option value="organizer">Organizer</option></select></label></>}<p className="error">{error}</p><button className="btn" type="submit">{register ? 'Register' : 'Login'}</button><p>{register ? <>Have an account? <a href="/login" onClick={e => { e.preventDefault(); go('/login'); }}>Login</a></> : <>No account? <a href="/register" onClick={e => { e.preventDefault(); go('/register'); }}>Register here</a></>}</p></form></section>;
 }
 
@@ -63,20 +69,22 @@ function Dashboard({ role }) {
   const user = getSession();
   if (!user || user.role !== role) return <section className="container narrow"><div className="panel"><h2>Login required</h2><button className="btn" onClick={() => go('/login')}>Login</button></div></section>;
   const events = getEvents(); const regs = getRegistrations().filter(reg => reg.userId === user.id);
-  if (role === 'attendee') return <section className="container"><h2>Welcome, {user.name}</h2><h3>Your registrations</h3><div className="grid">{regs.map(reg => { const event = events.find(item => item.id === reg.eventId); return event ? <EventCard event={event} key={reg.id} /> : null; })}</div><div className="panel"><p><b>Email:</b> {user.email}</p><p><b>Role:</b> Attendee</p></div></section>;
+  if (role === 'attendee') return <section className="container"><h2>Welcome, {user.name}</h2><h3>Your registrations ({regs.length})</h3>{regs.length ? <div className="grid">{regs.map(reg => { const event = events.find(item => item.id === reg.eventId); return event ? <RegistrationCard registration={reg} event={event} key={reg.id} /> : null; })}</div> : <div className="panel"><p>You have not registered for any events yet.</p><button className="btn" onClick={() => go('/events')}>Browse events</button></div>}<div className="panel"><p><b>Email:</b> {user.email}</p><p><b>Role:</b> Attendee</p></div></section>;
   if (role === 'organizer') return <section className="container"><div className="section-head"><h2>Organizer Dashboard</h2><button className="btn" onClick={() => go('/create-event')}>Create event</button></div><div className="grid">{events.filter(event => event.organizerId === user.id).map(event => <EventCard event={event} key={event.id} />)}</div></section>;
   return <section className="container"><h2>Admin Dashboard</h2><div className="panel"><h3>Users</h3>{getUsers().map(item => <p key={item.id}>{item.name} · {item.email} · {item.role}</p>)}</div><div className="panel"><h3>Events</h3>{events.map(event => <p key={event.id}>{event.name} · {event.seats} seats left</p>)}</div></section>;
 }
 
 function CreateEvent() {
   const [error, setError] = useState('');
-  const submit = e => { e.preventDefault(); const user = getSession(); if (!user || user.role !== 'organizer') return go('/login'); const form = new FormData(e.currentTarget); const event = { id: Date.now(), organizerId: user.id, organizer: user.name, name: form.get('name'), desc: form.get('desc'), category: form.get('category'), date: form.get('date'), time: form.get('time'), location: form.get('location'), capacity: Number(form.get('capacity')), seats: Number(form.get('capacity')), price: Number(form.get('price')) }; if (!event.name || !event.date || !event.location || event.capacity < 1) return setError('Please complete all required fields.'); writeDb('events', [...getEvents(), event]); go(`/dashboard/${user.role}`); };
+  const submit = async e => { e.preventDefault(); const user = getSession(); if (!user || user.role !== 'organizer') return go('/login'); const form = new FormData(e.currentTarget); const event = { name: form.get('name'), desc: form.get('desc'), category: form.get('category'), date: form.get('date'), time: form.get('time'), location: form.get('location'), capacity: Number(form.get('capacity')), price: Number(form.get('price')) }; if (!event.name || !event.date || !event.location || event.capacity < 1) return setError('Please complete all required fields.'); try { await createEvent(event); go(`/dashboard/${user.role}`); } catch (error) { setError(error.message); } };
   return <section className="container narrow"><form className="form-card" onSubmit={submit}><h2>Create Event</h2><label>Event Name<input name="name" required /></label><label>Description<textarea name="desc" rows="4" required /></label><label>Category<select name="category">{Object.keys(categories).map(c => <option key={c}>{c}</option>)}</select></label><div className="row"><label>Date<input name="date" type="date" required /></label><label>Time<input name="time" type="time" required /></label></div><label>Location<input name="location" required /></label><div className="row"><label>Maximum Capacity<input name="capacity" type="number" min="1" required /></label><label>Ticket Price<input name="price" type="number" min="0" defaultValue="0" required /></label></div><p className="error">{error}</p><button className="btn" type="submit">Submit</button></form></section>;
 }
 
 function App() {
+  const [ready, setReady] = useState(false);
   const [, refresh] = useState(0);
-  useEffect(() => { ensureSeeded(); const listener = () => refresh(value => value + 1); window.addEventListener('popstate', listener); return () => window.removeEventListener('popstate', listener); }, []);
+  useEffect(() => { ensureSeeded().then(() => setReady(true)).catch(error => { console.error(error); setReady(true); }); const listener = () => refresh(value => value + 1); window.addEventListener('popstate', listener); window.addEventListener('ee:data-ready', listener); return () => { window.removeEventListener('popstate', listener); window.removeEventListener('ee:data-ready', listener); }; }, []);
+  if (!ready) return <p className="container muted">Loading EventEase...</p>;
   const path = window.location.pathname.replace(/\/+$/, '') || '/'; const parts = path.split('/').filter(Boolean);
   let page = path === '/' ? <Home /> : path === '/events' ? <Events /> : path === '/login' ? <Auth /> : path === '/register' ? <Auth register /> : path === '/create-event' ? <CreateEvent /> : parts[0] === 'events' ? <Details id={parts[1]} /> : parts[0] === 'dashboard' ? <Dashboard role={parts[1] || 'attendee'} /> : <Home />;
   return <Layout>{page}</Layout>;

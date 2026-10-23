@@ -12,12 +12,12 @@
   <section class="container narrow">
     <form class="form-card" id="registerForm" novalidate>
       <h2>Create Account</h2>
-      <label>Full Name<input id="name" required></label>
-      <label>Email<input type="email" id="email" required></label>
-      <label>Password<input type="password" id="password" required></label>
-      <label>Confirm Password<input type="password" id="confirm" required></label>
+      <label>Full Name<input id="name" name="name" required></label>
+      <label>Email<input type="email" id="email" name="email" required></label>
+      <label>Password<input type="password" id="password" name="password" required></label>
+      <label>Confirm Password<input type="password" id="confirm" name="confirm" required></label>
       <label>Role
-        <select id="role">
+        <select id="role" name="role">
           <option value="attendee">Attendee</option>
           <option value="organizer">Organizer</option>
         </select>
@@ -29,7 +29,7 @@
   </section>
 </main>
 <footer id="footer"></footer>
-<script src="js/main.js"></script>
-<script src="js/auth.js"></script>
+<script src="js/main.js?v=20261018"></script>
+<script src="js/auth.js?v=20261018"></script>
 </body>
 </html>

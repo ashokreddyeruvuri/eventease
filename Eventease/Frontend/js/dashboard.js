@@ -8,10 +8,10 @@ const userById = id => getUsers().find(u => u.id === id);
 function renderAttendee(user) {
   const mine = getRegs().filter(r => r.userId === user.id).map(r => ({ ...r, ev: evById(r.eventId) })).filter(r => r.ev);
   const upcoming = mine.filter(r => lastDate(r.ev) >= todayStr()), past = mine.filter(r => lastDate(r.ev) < todayStr());
-  const rows = list => list.map(r => `<tr><td>${esc(r.ev.name)}</td><td>${dateLabel(r.ev)}</td><td>${esc(r.ev.location)}</td></tr>`);
+  const rows = list => list.map(r => `<tr><td><strong>${esc(r.ev.name)}</strong><br><span class="small muted">${esc(r.ev.category)} · ${esc(r.ev.organizer || 'EventEase organizer')}</span><br><span class="small">${esc(r.ev.desc || 'No description available.')}</span></td><td>📅 ${dateLabel(r.ev)}<br>🕘 ${esc(r.ev.time || 'Time not added')}<br>🎟️ ${fmtPrice(r.ev.price)}</td><td>📍 ${esc(r.ev.location)}<br><span class="small muted">${Number(r.ev.seats ?? 0)} of ${Number(r.ev.capacity ?? 0)} seats available</span></td><td><a class="btn btn-sm btn-light" href="event-details.html?id=${r.ev.id}">View details</a></td></tr>`);
   return `<h2>Welcome, ${esc(user.name)} 👋</h2><div class="stats">${stat(mine.length, 'Registered Events')}${stat(upcoming.length, 'Upcoming')}${stat(past.length, 'Past')}</div>
-  <h3>Upcoming Events</h3>${table(['Event', 'Date', 'Location'], rows(upcoming))}
-  <h3>Past Events</h3>${table(['Event', 'Date', 'Location'], rows(past))}
+  <h3>Upcoming Events</h3>${table(['Event details', 'Schedule & price', 'Location & seats', 'Actions'], rows(upcoming))}
+  <h3>Past Events</h3>${table(['Event details', 'Schedule & price', 'Location & seats', 'Actions'], rows(past))}
   <h3>My Tickets</h3>${mine.map(r => `<div class="ticket" id="ticket-${r.id}"><b>🎟️ ${esc(r.ev.name)}</b><br>Ticket: <b>${esc(r.ticket)}</b> · ${dateLabel(r.ev)} · ${esc(r.ev.location)}<br>${r.ev.url ? `<a href="${esc(r.ev.url)}" target="_blank" rel="noopener noreferrer">Event website</a>` : ''}<div class="ticket-actions"><button class="btn btn-sm btn-light" onclick="printTicket(${r.id})">Print / Download</button><button class="btn btn-sm btn-danger" onclick="cancelRegistration(${r.id})">Cancel registration</button></div></div>`).join('') || '<p class="muted">No tickets yet. <a href="events.html">Browse events</a></p>'}
   <h3 style="margin-top:20px">Profile</h3><div class="panel profile-panel">
     <div class="profile-summary">${user.photo ? `<img class="profile-photo" src="${esc(user.photo)}" alt="${esc(user.name)} profile photo">` : '<div class="profile-photo profile-placeholder" aria-hidden="true">👤</div>'}<div><span class="tag">Attendee account</span><h3>${esc(user.name)}</h3><p class="muted">${esc(user.email)}</p><p class="small muted">${esc(user.college || 'College not added')} · ${esc(user.address || 'Address not added')}</p></div></div>
@@ -47,17 +47,18 @@ function deleteEvent(id) {
   DB.set('registrations', getRegs().filter(r => r.eventId !== id)); initDashboard();
 }
 
-function cancelRegistration(id) {
+async function cancelRegistration(id) {
   const user = getSession();
   const registration = getRegs().find(r => r.id === id && r.userId === user?.id);
   if (!registration || !confirm('Cancel this registration? The seat will become available again.')) return;
-  const events = getEvents();
-  const event = events.find(e => e.id === registration.eventId);
-  if (event) event.seats = Math.min(Number(event.seats || 0) + 1, Number(event.capacity || event.seats || 0));
-  DB.set('registrations', getRegs().filter(r => r.id !== id));
-  DB.set('events', events);
-  showToast('Registration cancelled.');
-  initDashboard();
+  try {
+    await apiRequest(`/events/${registration.eventId}/register`, { method: 'DELETE' });
+    await loadData();
+    showToast('Registration cancelled.');
+    initDashboard();
+  } catch (error) {
+    showToast(error.message);
+  }
 }
 
 function printTicket(id) {
@@ -233,6 +234,7 @@ function adminDelete(key, id) {
 // Picks the right dashboard from the data-role attribute on the page
 function initDashboard() {
   const box = document.getElementById('dash'); if (!box) return;
+  if (box.dataset.role === 'admin' && typeof requireAdminPage === 'function' && !requireAdminPage()) return;
   const role = box.dataset.role, user = requireRole(role); if (!user) return;
   box.innerHTML = { attendee: renderAttendee, organizer: renderOrganizer, admin: renderAdmin }[role](user);
 }
@@ -330,23 +332,29 @@ function initEventForm() {
   });
 }
 
-function saveEvent(form, user, editing, image, dates) {
-  const events = getEvents(), cap = Number(form.capacity.value);
-  // date/time keep the FIRST day so sorting and old code keep working; dates holds every day
-  const data = { name: form.name.value.trim(), desc: form.desc.value.trim(), category: form.category.value, dates, date: dates[0].date, time: dates[0].time,
-    location: form.location.value.trim(), url: form.url.value.trim(), capacity: cap, price: Number(form.price.value), image };
+async function saveEvent(form, user, editing, image, dates) {
   if (editing) {
-    // Find the event inside THIS fresh array, otherwise the edit is lost
-    const target = events.find(e => e.id === editing.id);
-    const taken = target.capacity - target.seats;
-    Object.assign(target, data, { seats: Math.max(cap - taken, 0) });
-  } else {
-    events.push({ id: Date.now(), organizerId: user.id, organizer: user.name, seats: cap, ...data });
+    return document.getElementById('formError').textContent = 'Editing existing events is not available through the API yet.';
   }
-  try { DB.set('events', events); }
-  catch { return document.getElementById('formError').textContent = 'Storage is full. Try a smaller image.'; }
-  showToast('Event saved!');
-  setTimeout(() => location.href = dashboardLink(user), 1000);
+  const data = {
+    name: form.name.value.trim(),
+    desc: form.desc.value.trim(),
+    category: form.category.value,
+    dates,
+    date: dates[0].date,
+    time: dates[0].time,
+    location: form.location.value.trim(),
+    url: form.url.value.trim(),
+    capacity: Number(form.capacity.value),
+    price: Number(form.price.value),
+    featured: false
+  };
+  try {
+    await apiRequest('/events', { method: 'POST', body: JSON.stringify(data) });
+    await loadData();
+    showToast('Event saved to the database!');
+    setTimeout(() => location.href = dashboardLink(user), 1000);
+  } catch (error) {
+    document.getElementById('formError').textContent = error.message;
+  }
 }
-
-initDashboard(); initEventForm();

@@ -135,7 +135,7 @@ function renderEventDetails() {
     </section>`;
 }
 
-function registerForEvent(eventId) {
+async function registerForEvent(eventId) {
   const user = getSession();
   if (!user) {
     location.href = 'login.html';
@@ -147,18 +147,14 @@ function registerForEvent(eventId) {
   if (eventStatus(e) === 'Completed') return showToast('Registration is closed for this event.');
   if ((e.seats ?? 0) <= 0) return showToast('This event is sold out.');
 
-  const regs = getRegs();
-  if (regs.some(r => r.userId === user.id && r.eventId === eventId)) {
-    showToast('You are already registered for this event.');
-    return;
+  try {
+    await apiRequest(`/events/${eventId}/register`, { method: 'POST' });
+    await loadData();
+    showToast('Your seat is confirmed!');
+    renderEventDetails();
+  } catch (error) {
+    showToast(error.message);
   }
-
-  regs.push({ id: Date.now(), userId: user.id, eventId, ticket: `EE-${Date.now().toString().slice(-6)}`, date: todayStr(), status: 'Confirmed' });
-  e.seats = Math.max((e.seats ?? 0) - 1, 0);
-  DB.set('registrations', regs);
-  DB.set('events', getEvents().map(item => item.id === eventId ? e : item));
-  showToast('Your seat is confirmed!');
-  renderEventDetails();
 }
 
 function initEventPage() {

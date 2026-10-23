@@ -1,11 +1,52 @@
 // ===== main.js: shared data store, navbar, footer, helpers =====
 const CATEGORIES = { Technology:'💻', Music:'🎵', Sports:'⚽', Workshops:'🛠️', Conferences:'🎤', Cultural:'🎭' };
 
-// Tiny localStorage "database" so the site works without a backend
+const API_BASE = window.EVENTEASE_API_URL || 'http://localhost:4000/api';
+const DATA = { events: [], users: [], registrations: [], session: null };
+
 const DB = {
-  get(key, fallback) { try { return JSON.parse(localStorage.getItem('ee_' + key)) ?? fallback; } catch { return fallback; } },
-  set(key, value) { localStorage.setItem('ee_' + key, JSON.stringify(value)); }
+  get(key, fallback) { return DATA[key] ?? fallback; },
+  set(key, value) { DATA[key] = value; }
 };
+
+function getToken() { return localStorage.getItem('ee_token'); }
+
+async function apiRequest(path, options = {}) {
+  const headers = { ...(options.body ? { 'Content-Type': 'application/json' } : {}), ...(options.headers || {}) };
+  const token = getToken();
+  if (token) headers.Authorization = `Bearer ${token}`;
+  let response;
+  try {
+    response = await fetch(`${API_BASE}${path}`, { ...options, headers });
+  } catch {
+    throw new Error(`Cannot connect to EventEase backend at ${API_BASE}. Start the backend on port 4000 and try again.`);
+  }
+  if (!response.ok) {
+    const body = await response.json().catch(() => ({}));
+    const message = Array.isArray(body.message) ? body.message.join(', ') : body.message;
+    throw new Error(message || body.error || `Request failed (${response.status}).`);
+  }
+  return response.status === 204 ? null : response.json();
+}
+
+async function loadData() {
+  const tokenAtStart = getToken();
+  DATA.events = await apiRequest('/events');
+  DATA.session = null;
+  DATA.registrations = [];
+  DATA.users = [];
+  if (tokenAtStart) {
+    try {
+      DATA.session = await apiRequest('/me');
+      DATA.registrations = await apiRequest('/registrations/me');
+      if (DATA.session.role === 'admin') DATA.users = await apiRequest('/admin/users');
+    } catch (error) {
+      if (getToken() === tokenAtStart) localStorage.removeItem('ee_token');
+      throw error;
+    }
+  }
+  document.dispatchEvent(new Event('ee:data-ready'));
+}
 
 const sched = [['09:00','Registration & Welcome'],['10:00','Opening Session'],['13:00','Lunch & Networking'],['15:00','Main Activity'],['17:00','Closing']];
 const ORG = {organizerId:2, organizer:'Rahul Verma'};
@@ -27,13 +68,10 @@ const SAMPLE_USERS = [
   {id:3,name:'Priya Sharma',email:'user@eventease.com',password:'user123',role:'attendee'}
 ];
 
-// Seed sample data on first visit
-if (!DB.get('events')) { DB.set('events', SAMPLE_EVENTS); DB.set('users', SAMPLE_USERS); DB.set('registrations', []); }
-
 const getEvents = () => DB.get('events', []);
 const getUsers = () => DB.get('users', []);
 const getRegs = () => DB.get('registrations', []);
-const getSession = () => DB.get('session', null);
+const getSession = () => DATA.session;
 const fmtPrice = p => (p > 0 ? '₹' + p : 'Free');
 const eventStatusLabel = e => Number(e.seats ?? 0) <= 0 ? 'Sold out' : eventStatus(e);
 const todayStr = () => new Date().toLocaleDateString('en-CA'); // local date as YYYY-MM-DD
@@ -67,14 +105,20 @@ function showToast(msg) {
 // Redirects to login unless the logged-in user still exists and has an allowed role
 function requireRole(...roles) {
   const u = getSession();
-  const stillExists = u && getUsers().some(x => x.id === u.id);
-  if (!u || !stillExists || !roles.includes(u.role)) {
-    localStorage.removeItem('ee_session'); location.href = 'login.html'; return null;
+  if (!u || !roles.includes(u.role)) {
+    if (!u) localStorage.removeItem('ee_token');
+    location.href = 'login.html'; return null;
   }
   return u;
 }
 
-function logout() { localStorage.removeItem('ee_session'); location.href = 'index.html'; }
+async function logout() {
+  try { if (getToken()) await apiRequest('/auth/logout', { method: 'POST' }); }
+  catch (error) { console.error('Logout failed.', error); }
+  localStorage.removeItem('ee_token');
+  DATA.session = null;
+  location.href = 'index.html';
+}
 
 // Builds the navbar (changes depending on login state) and the footer
 function renderLayout() {
@@ -92,7 +136,14 @@ function renderLayout() {
 renderLayout();
 
 document.addEventListener('DOMContentLoaded', () => {
-  if (typeof initEventPage === 'function') initEventPage();
-  if (typeof initDashboard === 'function') initDashboard();
-  if (typeof initEventForm === 'function') initEventForm();
+  const page = location.pathname.split('/').pop();
+  if (page === 'login.html' || page === 'register.html') return;
+  loadData().then(() => {
+    if (typeof initEventPage === 'function') initEventPage();
+    if (typeof initDashboard === 'function') initDashboard();
+    if (typeof initEventForm === 'function') initEventForm();
+  }).catch(error => {
+    console.error('Unable to load EventEase data.', error);
+    showToast(`Unable to connect to the EventEase server: ${error.message}`);
+  });
 });
